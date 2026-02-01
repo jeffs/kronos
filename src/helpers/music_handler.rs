@@ -8,12 +8,12 @@ use std::{
 };
 
 use lofty::{AudioFile, Probe};
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
+use rodio::{Decoder, OutputStream, OutputStreamBuilder, Sink};
 
 use super::gen_funcs;
 
 pub struct MusicHandle {
-    music_output: Arc<(OutputStream, OutputStreamHandle)>,
+    music_output: Arc<OutputStream>,
     sink: Arc<Sink>,
     song_length: u32,
     time_played: Arc<Mutex<u32>>,
@@ -30,8 +30,8 @@ impl Default for MusicHandle {
 impl MusicHandle {
     pub fn new() -> Self {
         Self {
-            music_output: Arc::new(OutputStream::try_default().unwrap()),
-            sink: Arc::new(Sink::new_idle().0), // more efficient way, shouldnt have to do twice?
+            music_output: Arc::new(OutputStreamBuilder::open_default_stream().unwrap()),
+            sink: Arc::new(Sink::new().0),
             song_length: 0,
             time_played: Arc::new(Mutex::new(0)),
             currently_playing: "CURRENT SONG".to_string(),
@@ -81,7 +81,7 @@ impl MusicHandle {
         self.update_song_length(&path);
 
         // reinitialize due to rodio crate
-        self.sink = Arc::new(Sink::try_new(&self.music_output.1).unwrap());
+        self.sink = Arc::new(Sink::connect_new(self.music_output.mixer()));
 
         // clone sink for thread
         let sclone = self.sink.clone();
