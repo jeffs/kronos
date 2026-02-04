@@ -39,10 +39,11 @@ pub fn audio_display(path: &PathBuf) -> String {
 
 pub fn scan_and_filter_directory() -> Vec<String> {
     let mut items = Vec::new();
-    let valid_extensions: HashSet<&str> = ["mp3", "mp4", "m4a", "wav", "flac", "ogg", "aac"]
-        .iter()
-        .cloned()
-        .collect();
+    let valid_extensions: HashSet<&str> =
+        ["mp3", "mp4", "m4a", "wav", "flac", "ogg", "aac", "toml"]
+            .iter()
+            .cloned()
+            .collect();
 
     let current_dir = env::current_dir().expect("Failed to get current directory");
 
@@ -63,6 +64,14 @@ pub fn scan_and_filter_directory() -> Vec<String> {
         }
     }
     items
+}
+
+/// Returns true if the path is a playlist file (.toml extension).
+pub fn is_playlist(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext == "toml")
+        .unwrap_or(false)
 }
 
 // scans folder for valid files, returns matches

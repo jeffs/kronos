@@ -6,16 +6,18 @@ use std::{
 };
 use kronos::gen_funcs;
 use kronos::music_handler::MusicHandle;
+use kronos::playlist::Playlist;
 use kronos::queue::Queue;
 use kronos::stateful_list::StatefulList;
 use kronos::stateful_table::StatefulTable;
 use crate::state::{save_state, State};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum InputMode {
     Browser,
     Queue,
     Controls,
+    SavePlaylist,
 }
 
 /// Represents the active tab state.
@@ -45,6 +47,8 @@ pub struct App<'a> {
     pub titles: Vec<&'a str>,
     pub active_tab: AppTab,
     pub last_visited_path: PathBuf,
+    pub playlist_name_input: String,
+    pub status_message: Option<String>,
 }
 
 impl<'a> App<'a> {
@@ -64,6 +68,8 @@ impl<'a> App<'a> {
             titles: vec!["Music", "Controls"],
             active_tab: AppTab::Music,
             last_visited_path: env::current_dir().unwrap(),
+            playlist_name_input: String::new(),
+            status_message: None,
         }
     }
 
@@ -149,6 +155,48 @@ impl<'a> App<'a> {
         } else {
             let join = Path::join(&current_dir, Path::new(&self.browser_items.item()));
             join
+        }
+    }
+
+    /// Load a playlist file and populate the queue.
+    /// Returns Ok with message on success, Err with error message on failure.
+    pub fn load_selected_playlist(&mut self) -> Result<String, String> {
+        let path = self.selected_item();
+        if !gen_funcs::is_playlist(&path) {
+            return Err("Selected file is not a playlist".to_string());
+        }
+
+        match Playlist::load(&path) {
+            Ok((playlist, missing)) => {
+                let count = self.queue_items.load_playlist(playlist);
+                let mut msg = format!("Loaded {} songs", count);
+                if !missing.is_empty() {
+                    msg.push_str(&format!(" ({} missing)", missing.len()));
+                }
+                Ok(msg)
+            }
+            Err(e) => Err(format!("Failed to load playlist: {}", e)),
+        }
+    }
+
+    /// Save the current queue as a playlist.
+    /// Returns Ok with message on success, Err with error message on failure.
+    pub fn save_queue_as_playlist(&mut self) -> Result<String, String> {
+        let name = self.playlist_name_input.trim();
+        if name.is_empty() {
+            return Err("Playlist name cannot be empty".to_string());
+        }
+        if self.queue_items.is_empty() {
+            return Err("Queue is empty".to_string());
+        }
+
+        let playlist = self.queue_items.to_playlist(name.to_string());
+        let filename = format!("{}.toml", name.replace(['/', '\\', ':'], "_"));
+        let path = Playlist::default_directory().join(&filename);
+
+        match playlist.save(&path) {
+            Ok(()) => Ok(format!("Saved playlist to {}", path.display())),
+            Err(e) => Err(format!("Failed to save playlist: {}", e)),
         }
     }
 }

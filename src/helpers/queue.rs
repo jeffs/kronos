@@ -7,6 +7,7 @@ use lofty::{AudioFile, Probe};
 use tui::widgets::ListState;
 
 use super::gen_funcs::bulk_add;
+use super::playlist::Playlist;
 use crate::constants::{SECONDS_PER_DAY, SECONDS_PER_HOUR, SECONDS_PER_MINUTE};
 
 pub struct Queue {
@@ -182,5 +183,29 @@ impl Queue {
             self.decrement_total_time();
             self.items.remove(self.curr);
         };
+    }
+
+    /// Clear all items from the queue.
+    pub fn clear(&mut self) {
+        self.items.clear();
+        self.total_time = 0;
+        self.curr = 0;
+        self.unselect();
+    }
+
+    /// Create a Playlist from the current queue contents.
+    pub fn to_playlist(&self, name: String) -> Playlist {
+        Playlist::new(name, self.items.iter().cloned().collect())
+    }
+
+    /// Load songs from a playlist into the queue (clears existing queue first).
+    /// Returns the number of songs loaded.
+    pub fn load_playlist(&mut self, playlist: Playlist) -> usize {
+        self.clear();
+        let count = playlist.songs.len();
+        for song in playlist.songs {
+            self.add(song);
+        }
+        count
     }
 }

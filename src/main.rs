@@ -14,7 +14,7 @@ use tui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Span, Spans, Text},
-    widgets::{Block, BorderType, Borders, Cell, Gauge, List, ListItem, Row, Table, Tabs},
+    widgets::{Block, BorderType, Borders, Cell, Clear, Gauge, List, ListItem, Paragraph, Row, Table, Tabs},
     Frame, Terminal,
 };
 
@@ -73,13 +73,36 @@ fn run_app<B: Backend>(
         if crossterm::event::poll(timeout)? {
             // different keys depending on which browser tab
             if let Event::Key(key) = event::read()? {
+                // Clear status message on any keypress (except in SavePlaylist mode)
+                if app.input_mode() != InputMode::SavePlaylist {
+                    app.status_message = None;
+                }
                 match app.input_mode() {
                     InputMode::Browser => match key.code {
                         KeyCode::Char('q') => break,
                         KeyCode::Char('p') | KeyCode::Char(' ') => app.music_handle.play_pause(),
                         KeyCode::Char('g') => app.music_handle.skip(),
-                        KeyCode::Char('a') => app.queue_items.add(app.selected_item()),
-                        KeyCode::Enter => app.evaluate(),
+                        KeyCode::Char('a') => {
+                            let selected = app.selected_item();
+                            if gen_funcs::is_playlist(&selected) {
+                                app.status_message = Some(
+                                    app.load_selected_playlist().unwrap_or_else(|e| e),
+                                );
+                            } else {
+                                app.queue_items.add(selected);
+                            }
+                        }
+                        KeyCode::Enter => {
+                            let selected = app.selected_item();
+                            if gen_funcs::is_playlist(&selected) {
+                                app.status_message = Some(
+                                    app.load_selected_playlist()
+                                        .unwrap_or_else(|e| e),
+                                );
+                            } else {
+                                app.evaluate();
+                            }
+                        }
                         KeyCode::Backspace => app.backpedal(),
                         KeyCode::Down | KeyCode::Char('j') => app.browser_items.next(),
                         KeyCode::Up | KeyCode::Char('k') => app.browser_items.previous(),
@@ -111,6 +134,15 @@ fn run_app<B: Backend>(
                         KeyCode::Down | KeyCode::Char('j') => app.queue_items.next(),
                         KeyCode::Up | KeyCode::Char('k') => app.queue_items.previous(),
                         KeyCode::Char('r') => app.queue_items.remove(),
+                        KeyCode::Char('s') => {
+                            if app.queue_items.is_empty() {
+                                app.status_message =
+                                    Some("Queue is empty, nothing to save".to_string());
+                            } else {
+                                app.playlist_name_input.clear();
+                                app.set_input_mode(InputMode::SavePlaylist);
+                            }
+                        }
                         KeyCode::Left | KeyCode::Char('h') => {
                             app.queue_items.unselect();
                             app.set_input_mode(InputMode::Browser);
@@ -122,6 +154,26 @@ fn run_app<B: Backend>(
                                 InputMode::Controls => app.set_input_mode(InputMode::Browser),
                                 _ => app.set_input_mode(InputMode::Controls),
                             };
+                        }
+                        _ => {}
+                    },
+                    InputMode::SavePlaylist => match key.code {
+                        KeyCode::Esc => {
+                            app.playlist_name_input.clear();
+                            app.set_input_mode(InputMode::Queue);
+                        }
+                        KeyCode::Enter => {
+                            app.status_message = Some(
+                                app.save_queue_as_playlist().unwrap_or_else(|e| e),
+                            );
+                            app.playlist_name_input.clear();
+                            app.set_input_mode(InputMode::Queue);
+                        }
+                        KeyCode::Backspace => {
+                            app.playlist_name_input.pop();
+                        }
+                        KeyCode::Char(c) => {
+                            app.playlist_name_input.push(c);
                         }
                         _ => {}
                     },
@@ -276,7 +328,12 @@ fn music_tab<B: Backend>(f: &mut Frame<B>, app: &mut App, chunks: Rect, cfg: &Co
         .highlight_symbol(">> ");
     f.render_stateful_widget(queue_items, queue_playing[0], &mut app.queue_items.state());
 
-    let playing_title = format!("| {current_song} |", current_song = app.current_song());
+    // Build playing title with optional status message
+    let playing_title = if let Some(ref msg) = app.status_message {
+        format!("| {} |", msg)
+    } else {
+        format!("| {current_song} |", current_song = app.current_song())
+    };
 
     // Note Gauge is using background color for progress
     let playing = Gauge::default()
@@ -291,6 +348,48 @@ fn music_tab<B: Backend>(f: &mut Frame<B>, app: &mut App, chunks: Rect, cfg: &Co
         .gauge_style(Style::default().fg(cfg.highlight_background()))
         .ratio(app.song_progress());
     f.render_widget(playing, queue_playing[1]);
+
+    // Render save playlist dialog if in SavePlaylist mode
+    if app.input_mode() == InputMode::SavePlaylist {
+        let dialog_width = 50;
+        let dialog_height = 3;
+        let area = centered_rect(dialog_width, dialog_height, chunks);
+
+        f.render_widget(Clear, area);
+
+        let input_text = format!("{}_", app.playlist_name_input);
+        let input = Paragraph::new(input_text)
+            .style(Style::default().fg(cfg.foreground()))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .title("Save Playlist (Enter to save, Esc to cancel)")
+                    .style(Style::default().bg(cfg.background())),
+            );
+        f.render_widget(input, area);
+    }
+}
+
+/// Helper function to create a centered rect within the given area.
+fn centered_rect(width: u16, height: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length((r.height.saturating_sub(height)) / 2),
+            Constraint::Length(height),
+            Constraint::Min(0),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length((r.width.saturating_sub(width)) / 2),
+            Constraint::Length(width),
+            Constraint::Min(0),
+        ])
+        .split(popup_layout[1])[1]
 }
 
 fn instructions_tab<B: Backend>(f: &mut Frame<B>, app: &mut App, chunks: Rect, cfg: &Config) {
