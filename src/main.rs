@@ -2,7 +2,11 @@ mod app;
 mod config;
 mod state;
 
-use std::{error::Error, io, time::{Duration, Instant}};
+use std::{
+    error::Error,
+    io,
+    time::{Duration, Instant},
+};
 
 use crossterm::{
     event::{self, DisableMouseCapture, Event, KeyCode},
@@ -14,7 +18,9 @@ use tui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Span, Spans, Text},
-    widgets::{Block, BorderType, Borders, Cell, Clear, Gauge, List, ListItem, Paragraph, Row, Table, Tabs},
+    widgets::{
+        Block, BorderType, Borders, Cell, Clear, Gauge, List, ListItem, Paragraph, Row, Table, Tabs,
+    },
     Frame, Terminal,
 };
 
@@ -85,9 +91,8 @@ fn run_app<B: Backend>(
                         KeyCode::Char('a') => {
                             let selected = app.selected_item();
                             if gen_funcs::is_playlist(&selected) {
-                                app.status_message = Some(
-                                    app.load_selected_playlist().unwrap_or_else(|e| e),
-                                );
+                                app.status_message =
+                                    Some(app.load_selected_playlist().unwrap_or_else(|e| e));
                             } else {
                                 app.queue_items.add(selected);
                             }
@@ -95,10 +100,8 @@ fn run_app<B: Backend>(
                         KeyCode::Enter => {
                             let selected = app.selected_item();
                             if gen_funcs::is_playlist(&selected) {
-                                app.status_message = Some(
-                                    app.load_selected_playlist()
-                                        .unwrap_or_else(|e| e),
-                                );
+                                app.status_message =
+                                    Some(app.load_selected_playlist().unwrap_or_else(|e| e));
                             } else {
                                 app.evaluate();
                             }
@@ -163,9 +166,8 @@ fn run_app<B: Backend>(
                             app.set_input_mode(InputMode::Queue);
                         }
                         KeyCode::Enter => {
-                            app.status_message = Some(
-                                app.save_queue_as_playlist().unwrap_or_else(|e| e),
-                            );
+                            app.status_message =
+                                Some(app.save_queue_as_playlist().unwrap_or_else(|e| e));
                             app.playlist_name_input.clear();
                             app.set_input_mode(InputMode::Queue);
                         }

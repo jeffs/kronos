@@ -88,7 +88,7 @@ impl<T: ToString> StatefulList<T> {
     pub fn find_by_path(&self, s: &PathBuf) -> usize {
         let mut i = 0;
 
-        for n in 0 .. self.items.len() {
+        for n in 0..self.items.len() {
             if s.ends_with(self.items[n].to_string()) {
                 i = n;
                 break;

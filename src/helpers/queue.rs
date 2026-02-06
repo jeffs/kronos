@@ -367,7 +367,9 @@ mod tests {
             q.state.select(Some(case.cursor));
 
             match case.op {
-                Op::Pop(n) => (0..n).for_each(|_| { q.pop(); }),
+                Op::Pop(n) => (0..n).for_each(|_| {
+                    q.pop();
+                }),
                 Op::Remove => q.remove(),
             }
 

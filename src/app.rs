@@ -1,16 +1,16 @@
-use std::{
-    env,
-    path::{Path, PathBuf},
-    thread,
-    time::Duration,
-};
+use crate::state::{save_state, State};
 use kronos::gen_funcs;
 use kronos::music_handler::MusicHandle;
 use kronos::playlist::Playlist;
 use kronos::queue::Queue;
 use kronos::stateful_list::StatefulList;
 use kronos::stateful_table::StatefulTable;
-use crate::state::{save_state, State};
+use std::{
+    env,
+    path::{Path, PathBuf},
+    thread,
+    time::Duration,
+};
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum InputMode {
@@ -55,7 +55,10 @@ impl<'a> App<'a> {
     pub fn new(initial_directory: Option<String>) -> Self {
         if let Some(path) = initial_directory {
             env::set_current_dir(&path).unwrap_or_else(|err| {
-                eprintln!("Could not set_current_dir to last_visited_path\n\tPath: {}\n\tError: {:?}", path, err);
+                eprintln!(
+                    "Could not set_current_dir to last_visited_path\n\tPath: {}\n\tError: {:?}",
+                    path, err
+                );
             });
         }
 
@@ -76,7 +79,8 @@ impl<'a> App<'a> {
     pub fn save_state(self) {
         save_state(State {
             last_visited_path: self.last_visited_path.to_str().map(String::from),
-        }).unwrap_or_else(|error| {
+        })
+        .unwrap_or_else(|error| {
             eprintln!("Error in save_state {}", error);
         });
     }
@@ -139,7 +143,11 @@ impl<'a> App<'a> {
 
         // if something playing, calculate progress
         } else if !self.music_handle.sink_empty() {
-            f64::clamp(self.music_handle.time_played() as f64 / self.music_handle.song_length() as f64, 0.0, 1.0)
+            f64::clamp(
+                self.music_handle.time_played() as f64 / self.music_handle.song_length() as f64,
+                0.0,
+                1.0,
+            )
         // if nothing playing keep rolling
         } else {
             self.auto_play();
