@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 use tui::widgets::ListState;
 
 // TODO encapsulation
@@ -85,7 +85,7 @@ impl<T> StatefulList<T> {
 }
 
 impl<T: ToString> StatefulList<T> {
-    pub fn find_by_path(&self, s: &PathBuf) -> usize {
+    pub fn find_by_path(&self, s: &Path) -> usize {
         let mut i = 0;
 
         for n in 0..self.items.len() {
@@ -97,7 +97,7 @@ impl<T: ToString> StatefulList<T> {
 
         i
     }
-    pub fn select_by_path(&mut self, s: &PathBuf) {
+    pub fn select_by_path(&mut self, s: &Path) {
         self.select(self.find_by_path(s));
     }
 }

@@ -2,6 +2,7 @@ use std::{
     fs::File,
     io::BufReader,
     path::{Path, PathBuf},
+    rc::Rc,
     sync::{Arc, Mutex},
     thread,
     time::Duration,
@@ -13,7 +14,7 @@ use rodio::{Decoder, OutputStream, OutputStreamBuilder, Sink};
 use super::gen_funcs;
 
 pub struct MusicHandle {
-    music_output: Arc<OutputStream>,
+    music_output: Rc<OutputStream>,
     sink: Arc<Sink>,
     song_length: u32,
     time_played: Arc<Mutex<u32>>,
@@ -30,7 +31,7 @@ impl Default for MusicHandle {
 impl MusicHandle {
     pub fn new() -> Self {
         Self {
-            music_output: Arc::new(OutputStreamBuilder::open_default_stream().unwrap()),
+            music_output: Rc::new(OutputStreamBuilder::open_default_stream().unwrap()),
             sink: Arc::new(Sink::new().0),
             song_length: 0,
             time_played: Arc::new(Mutex::new(0)),
@@ -143,11 +144,7 @@ impl MusicHandle {
 
     pub fn change_volume(&mut self, volume: f32) {
         self.volume += volume;
-        if self.volume < 0. {
-            self.volume = 0.;
-        } else if self.volume > 1. {
-            self.volume = 1.;
-        }
+        self.volume = self.volume.clamp(0., 1.);
         self.sink.set_volume(self.volume)
     }
 }
