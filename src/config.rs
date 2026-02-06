@@ -98,7 +98,7 @@ impl Config {
                         "white" => Color::White,
                         _ => {
                             let colors: Vec<u8> = rgb.unwrap()
-                            .split(|i| i == ',')
+                            .split(',')
                             .map(|i| i.to_string().trim().parse().expect("Couldn't read RGB Values. Make sure each value is between 0 & 255"))
                             .collect();
 
