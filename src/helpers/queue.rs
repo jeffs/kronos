@@ -78,22 +78,26 @@ impl Queue {
     }
 
     pub fn pop(&mut self) -> PathBuf {
-        self.decrement_total_time();
-        self.items.pop_front().unwrap()
+        self.decrement_total_time(0);
+        let item = self.items.pop_front().unwrap();
+        self.curr = self.curr.saturating_sub(1);
+        let selected = (!self.items.is_empty()).then_some(self.curr);
+        self.state.select(selected);
+        item
     }
 
     pub fn state(&self) -> ListState {
         self.state.clone()
     }
 
-    fn decrement_total_time(&mut self) {
-        let item = self.items[self.curr].clone();
-        let length = self.item_length(&item);
+    fn decrement_total_time(&mut self, index: usize) {
+        let item = &self.items[index];
+        let length = self.item_length(item);
         self.total_time -= length;
     }
 
     // get audio file length
-    pub fn item_length(&mut self, path: &PathBuf) -> u32 {
+    pub fn item_length(&self, path: &PathBuf) -> u32 {
         let path = Path::new(&path);
         let tagged_file = Probe::open(path)
             .expect("ERROR: Bad path provided!")
@@ -169,18 +173,18 @@ impl Queue {
         if self.items.is_empty() {
             // top of queue
         } else if self.items.len() == 1 {
-            self.decrement_total_time();
+            self.decrement_total_time(self.curr);
             self.items.remove(self.curr);
             self.unselect();
         // if at bottom of queue, remove item and select item above above
         } else if self.state.selected().unwrap() >= (self.items.len() - 1) {
-            self.decrement_total_time();
+            self.decrement_total_time(self.curr);
             self.items.remove(self.curr);
             self.curr -= 1;
             self.state.select(Some(self.curr));
         // else delete item
         } else if !self.items.is_empty() {
-            self.decrement_total_time();
+            self.decrement_total_time(self.curr);
             self.items.remove(self.curr);
         };
     }
@@ -207,5 +211,175 @@ impl Queue {
             self.add(song);
         }
         count
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::TempDir;
+
+    /// Write a minimal valid PCM WAV file with the given duration of silence.
+    fn create_test_wav(path: &Path, duration_secs: u32) {
+        let sample_rate: u32 = 44100;
+        let bits_per_sample: u16 = 16;
+        let num_channels: u16 = 1;
+        let bytes_per_sample = (bits_per_sample / 8) as u32;
+        let data_size = sample_rate * bytes_per_sample * num_channels as u32 * duration_secs;
+        let file_size = 36 + data_size; // RIFF header minus 8 bytes + data
+
+        let mut f = std::fs::File::create(path).unwrap();
+        // RIFF header
+        f.write_all(b"RIFF").unwrap();
+        f.write_all(&file_size.to_le_bytes()).unwrap();
+        f.write_all(b"WAVE").unwrap();
+        // fmt subchunk
+        f.write_all(b"fmt ").unwrap();
+        f.write_all(&16u32.to_le_bytes()).unwrap(); // subchunk1 size
+        f.write_all(&1u16.to_le_bytes()).unwrap(); // PCM
+        f.write_all(&num_channels.to_le_bytes()).unwrap();
+        f.write_all(&sample_rate.to_le_bytes()).unwrap();
+        let byte_rate = sample_rate * num_channels as u32 * bytes_per_sample;
+        f.write_all(&byte_rate.to_le_bytes()).unwrap();
+        let block_align = num_channels * (bits_per_sample / 8);
+        f.write_all(&block_align.to_le_bytes()).unwrap();
+        f.write_all(&bits_per_sample.to_le_bytes()).unwrap();
+        // data subchunk
+        f.write_all(b"data").unwrap();
+        f.write_all(&data_size.to_le_bytes()).unwrap();
+        // silence
+        let zeros = vec![0u8; data_size as usize];
+        f.write_all(&zeros).unwrap();
+    }
+
+    /// Build a Queue by directly populating fields, bypassing `add()`'s
+    /// directory-scanning path.
+    fn make_queue(paths: &[PathBuf]) -> Queue {
+        let mut q = Queue::with_items();
+        for p in paths {
+            let length = q.item_length(p);
+            q.total_time += length;
+            q.items.push_back(p.clone());
+        }
+        if !q.items.is_empty() {
+            q.state.select(Some(0));
+        }
+        q
+    }
+
+    enum Op {
+        Pop(usize),
+        Remove,
+    }
+
+    struct Case {
+        name: &'static str,
+        durations: &'static [u32],
+        cursor: usize,
+        op: Op,
+        expect_total: u32,
+        expect_cursor: usize,
+        expect_len: usize,
+        expect_selected: Option<usize>,
+    }
+
+    #[test]
+    fn pop_and_remove() {
+        let cases = [
+            Case {
+                name: "pop subtracts front item duration",
+                durations: &[3, 5, 7],
+                cursor: 2,
+                op: Op::Pop(1),
+                expect_total: 12,
+                expect_cursor: 1,
+                expect_len: 2,
+                expect_selected: Some(1),
+            },
+            Case {
+                name: "pop adjusts cursor",
+                durations: &[1, 1, 1],
+                cursor: 2,
+                op: Op::Pop(1),
+                expect_total: 2,
+                expect_cursor: 1,
+                expect_len: 2,
+                expect_selected: Some(1),
+            },
+            Case {
+                name: "pop with cursor at zero",
+                durations: &[2, 4],
+                cursor: 0,
+                op: Op::Pop(1),
+                expect_total: 4,
+                expect_cursor: 0,
+                expect_len: 1,
+                expect_selected: Some(0),
+            },
+            Case {
+                name: "pop last item",
+                durations: &[5],
+                cursor: 0,
+                op: Op::Pop(1),
+                expect_total: 0,
+                expect_cursor: 0,
+                expect_len: 0,
+                expect_selected: None,
+            },
+            Case {
+                name: "pop full drain (regression: no panic)",
+                durations: &[2, 3, 4],
+                cursor: 2,
+                op: Op::Pop(3),
+                expect_total: 0,
+                expect_cursor: 0,
+                expect_len: 0,
+                expect_selected: None,
+            },
+            Case {
+                name: "remove subtracts cursor item duration",
+                durations: &[3, 5, 7],
+                cursor: 1,
+                op: Op::Remove,
+                expect_total: 10,
+                expect_cursor: 1,
+                expect_len: 2,
+                expect_selected: Some(1),
+            },
+        ];
+
+        for case in &cases {
+            let dir = TempDir::new().unwrap();
+            let paths: Vec<PathBuf> = case
+                .durations
+                .iter()
+                .enumerate()
+                .map(|(i, &d)| {
+                    let p = dir.path().join(format!("{i}.wav"));
+                    create_test_wav(&p, d);
+                    p
+                })
+                .collect();
+
+            let mut q = make_queue(&paths);
+            q.curr = case.cursor;
+            q.state.select(Some(case.cursor));
+
+            match case.op {
+                Op::Pop(n) => (0..n).for_each(|_| { q.pop(); }),
+                Op::Remove => q.remove(),
+            }
+
+            assert_eq!(q.total_time, case.expect_total, "{}: total_time", case.name);
+            assert_eq!(q.curr, case.expect_cursor, "{}: curr", case.name);
+            assert_eq!(q.length(), case.expect_len, "{}: length", case.name);
+            assert_eq!(
+                q.state.selected(),
+                case.expect_selected,
+                "{}: selected",
+                case.name
+            );
+        }
     }
 }
